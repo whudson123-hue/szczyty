@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { supabase } from '../supabase.js'
 
 const listaSzczytow = ref([])
+let myChannel = null
 
 async function pobierzSzczyty() {
   const { data } = await supabase.from('szczyty').select('*')
@@ -12,7 +13,33 @@ async function pobierzSzczyty() {
 
 onMounted(() => {
   pobierzSzczyty()
+
+  myChannel = supabase
+    .channel('tabela-szczyty-zmiany')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'szczyty' },
+      (payload) => {
+        if (payload.eventType === 'INSERT') {
+          // Dodawanie nowego kafełka
+          listaSzczytow.value.push(payload.new)
+        } else if (payload.eventType === 'DELETE') {
+          // Usuwanie kafełka, którego ID zostało usunięte z bazy
+          listaSzczytow.value = listaSzczytow.value.filter(
+            (szczyt) => szczyt.id !== payload.old.id
+          )
+        }
+      }
+    )
+    .subscribe()
 })
+
+onUnmounted(() => {
+  if (myChannel) {
+    supabase.removeChannel(myChannel)
+  }
+})
+
 </script>
 
 <template>
